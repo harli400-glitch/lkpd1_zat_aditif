@@ -832,39 +832,44 @@
         ];
 
         // Sample Pre-populated Data
-        let submissions = [
-            {
-                id: "sub-101",
-                nama: "Ahmad Rizky",
-                kelas: "IX 10",
-                timestamp: "05/10/2026, 08:30",
-                score: 96,
-                chainDetails: "Hari 1 (33.3 pt), Hari 2 (32.0 pt), Hari 3 (30.7 pt) - Sinkronisasi Sangat Baik."
-            },
-            {
-                id: "sub-102",
-                nama: "Siti Nurhaliza",
-                kelas: "IX 11",
-                timestamp: "05/10/2026, 09:15",
-                score: 88,
-                chainDetails: "Hari 1 (30.0 pt), Hari 2 (28.0 pt), Hari 3 (30.0 pt) - Sinkronisasi Baik."
-            },
-            {
-                id: "sub-103",
-                nama: "Budi Santoso",
-                kelas: "IX 12",
-                timestamp: "05/10/2026, 10:05",
-                score: 74,
-                chainDetails: "Hari 1 (25.0 pt), Hari 2 (24.0 pt), Hari 3 (25.0 pt) - Cukup Sinkron."
-            }
+        let submissions = [        
         ];
+
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxkr5rTM6mhLvBHN-Px7FpIpFGfcMv6Hy2TEBtBkDYZtN8bOwhi7Tp9PbAPnjbGjMYjxQ/exec';
+
+        // Fungsi khusus untuk menarik data terbaru dari Google Sheet (sheet LKPD1_Zat Aditif)
+        async function fetchDataFromSheet(silent = false) {
+            const tbody = document.getElementById('leaderboard-tbody');
+            if (!silent && submissions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-emerald-600 font-bold"><i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Mensinkronisasi data online...</td></tr>';
+            }
+            
+            try {
+                const response = await fetch(SCRIPT_URL);
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    submissions = data;
+                    renderLeaderboard();
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                if (!silent && submissions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-red-500 font-bold">Gagal memuat data. Periksa koneksi internet.</td></tr>';
+                }
+            }
+        }
 
         // Initialization
         window.addEventListener('DOMContentLoaded', () => {
-            renderLeaderboard();
+            fetchDataFromSheet();
             renderAnswerKeyTable();
+            
+            // Auto-refresh / polling setiap 10 detik agar perangkat lain menerima pembaruan otomatis
+            setInterval(() => {
+                fetchDataFromSheet(true);
+            }, 10000);
         });
-
+        
         // Tab Switching Logic
         function switchTab(tabId) {
             document.getElementById('form-tab').classList.add('hidden');
@@ -882,7 +887,9 @@
             } else {
                 navBoard.className = "px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center space-x-2 bg-white text-emerald-900 shadow-sm";
                 navForm.className = "px-4 py-2 rounded-xl text-sm font-semibold transition-all flex items-center space-x-2 text-emerald-100 hover:bg-white/10";
-                renderLeaderboard();
+                
+                // Tarik data terbaru dari Google Sheet saat membuka tab Daftar Nilai
+                fetchDataFromSheet();
             }
         }
 
@@ -1012,7 +1019,7 @@
         }
 
         // Handle Form Submission
-        function handleFormSubmit(e) {
+        async function handleFormSubmit(e) {
             e.preventDefault();
 
             const nama = document.getElementById('input-nama').value.trim();
@@ -1079,52 +1086,73 @@
                 chainDetails: `Hari 1 (${res1.score.toFixed(1)} pt), Hari 2 (${res2.score.toFixed(1)} pt), Hari 3 (${res3.score.toFixed(1)} pt)`
             };
 
-            // Save to Array
-            submissions.push(newSubmission);
+            // Change submit button status
+            const submitBtn = document.querySelector('button[type="submit"]');
+            const originalBtnText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xl"></i><span>Menyimpan ke Server...</span>';
+            submitBtn.disabled = true;
 
-            // Display Results View Card
-            document.getElementById('lkpd-form').classList.add('hidden');
-            const resultCard = document.getElementById('result-card');
-            resultCard.classList.remove('hidden');
+            try {
+                // === Kirim Data ke Google Sheets secara Online ===
+                await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify(newSubmission)
+                });
 
-            document.getElementById('result-respondent-info').innerText = `Responden: ${nama} (${kelas})`;
-            document.getElementById('result-score-display').innerText = totalScore;
+                // Sinkronkan ulang data dari sheet setelah pengiriman
+                await fetchDataFromSheet(true);
 
-            let badgeText = "Sangat Baik (Sangat Sinkron)";
-            if (totalScore < 70) badgeText = "Cukup (Perlu Kecermatan Sinkronisasi)";
-            else if (totalScore < 85) badgeText = "Baik (Sinkron)";
-            document.getElementById('result-grade-badge').innerText = `Kategori Mutu: ${badgeText}`;
+                submitBtn.innerHTML = originalBtnText;
+                submitBtn.disabled = false;
 
-            // Render chain details list
-            const chainDetailsContainer = document.getElementById('result-chain-details');
-            chainDetailsContainer.innerHTML = `
-                <div class="p-3 bg-white rounded-xl border border-slate-200">
-                    <strong class="text-slate-800">Hari 1: ${h1.nama || '-'} (${res1.score.toFixed(1)} Poin)</strong>
-                    <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
-                        <span class="${res1.syncFlags.jenisNamaSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Jenis ↔ Nama</span>
-                        <span class="${res1.syncFlags.namaBahanSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Nama ↔ Bahan Utama</span>
-                        <span class="${res1.syncFlags.aditifKategoriSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Aditif ↔ Kategori</span>
+                // Tampilkan Hasil Evaluasi
+                document.getElementById('lkpd-form').classList.add('hidden');
+                const resultCard = document.getElementById('result-card');
+                resultCard.classList.remove('hidden');
+
+                document.getElementById('result-respondent-info').innerText = `Responden: ${nama} (${kelas})`;
+                document.getElementById('result-score-display').innerText = totalScore;
+
+                let badgeText = "Sangat Baik (Sangat Sinkron)";
+                if (totalScore < 70) badgeText = "Cukup (Perlu Kecermatan Sinkronisasi)";
+                else if (totalScore < 85) badgeText = "Baik (Sinkron)";
+                document.getElementById('result-grade-badge').innerText = `Kategori Mutu: ${badgeText}`;
+
+                // Render rincian evaluasi
+                const chainDetailsContainer = document.getElementById('result-chain-details');
+                chainDetailsContainer.innerHTML = `
+                    <div class="p-3 bg-white rounded-xl border border-slate-200">
+                        <strong class="text-slate-800">Hari 1: ${h1.nama || '-'} (${res1.score.toFixed(1)} Poin)</strong>
+                        <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
+                            <span class="${res1.syncFlags.jenisNamaSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Jenis ↔ Nama</span>
+                            <span class="${res1.syncFlags.namaBahanSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Nama ↔ Bahan Utama</span>
+                            <span class="${res1.syncFlags.aditifKategoriSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Aditif ↔ Kategori</span>
+                        </div>
                     </div>
-                </div>
-                <div class="p-3 bg-white rounded-xl border border-slate-200">
-                    <strong class="text-slate-800">Hari 2: ${h2.nama || '-'} (${res2.score.toFixed(1)} Poin)</strong>
-                    <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
-                        <span class="${res2.syncFlags.jenisNamaSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Jenis ↔ Nama</span>
-                        <span class="${res2.syncFlags.namaBahanSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Nama ↔ Bahan Utama</span>
-                        <span class="${res2.syncFlags.aditifKategoriSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Aditif ↔ Kategori</span>
+                    <div class="p-3 bg-white rounded-xl border border-slate-200">
+                        <strong class="text-slate-800">Hari 2: ${h2.nama || '-'} (${res2.score.toFixed(1)} Poin)</strong>
+                        <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
+                            <span class="${res2.syncFlags.jenisNamaSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Jenis ↔ Nama</span>
+                            <span class="${res2.syncFlags.namaBahanSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Nama ↔ Bahan Utama</span>
+                            <span class="${res2.syncFlags.aditifKategoriSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Aditif ↔ Kategori</span>
+                        </div>
                     </div>
-                </div>
-                <div class="p-3 bg-white rounded-xl border border-slate-200">
-                    <strong class="text-slate-800">Hari 3: ${h3.nama || '-'} (${res3.score.toFixed(1)} Poin)</strong>
-                    <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
-                        <span class="${res3.syncFlags.jenisNamaSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Jenis ↔ Nama</span>
-                        <span class="${res3.syncFlags.namaBahanSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Nama ↔ Bahan Utama</span>
-                        <span class="${res3.syncFlags.aditifKategoriSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Aditif ↔ Kategori</span>
+                    <div class="p-3 bg-white rounded-xl border border-slate-200">
+                        <strong class="text-slate-800">Hari 3: ${h3.nama || '-'} (${res3.score.toFixed(1)} Poin)</strong>
+                        <div class="mt-1 flex flex-wrap gap-1 text-[10px]">
+                            <span class="${res3.syncFlags.jenisNamaSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Jenis ↔ Nama</span>
+                            <span class="${res3.syncFlags.namaBahanSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Nama ↔ Bahan Utama</span>
+                            <span class="${res3.syncFlags.aditifKategoriSync ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} px-2 py-0.5 rounded-full">Aditif ↔ Kategori</span>
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
 
-            renderLeaderboard();
+            } catch (err) {
+                alert("Gagal menyimpan data ke server Google Sheets. Pastikan koneksi internet aktif.");
+                submitBtn.innerHTML = originalBtnText;
+                submitBtn.disabled = false;
+            }
         }
 
         // Reset form for fresh submission
